@@ -1,0 +1,562 @@
+---
+title: "Online News Popularity Analysis - Machine Learning Assignment"
+author: "Fahad"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+
+```{r}
+
+##Referneces and Websites for The codes below. Most codes have been taken collectively from different sources.
+
+#https://rpubs.com/namitakadam28/335507
+#PG Bank Case
+#https://rpubs.com/bipinkg/666804
+#https://jtr13.github.io/cc21fall2/feature-selection-in-r.html
+#https://machinelearningmastery.com/feature-selection-with-the-caret-r-package/
+#ChatGPT
+#Stackoverflow
+#Github
+#https://www.kaggle.com/code/thehapyone/exploratory-analysis-for-online-news-popularity
+
+
+```
+
+
+```{r}
+#Load the data
+dta <- read.csv("OnlineNewsPopularity.csv")
+```
+
+
+```{r}
+## Exploratory Data analysis and Data cleaning
+
+#Check for structure and missing values.We can confirm that there are no missing values.
+sum(is.na(dta))
+
+# We will remove URL and timedelta because they are non-predictive variables and we will remove is.weekend column because its repetitive. We have alos omitted 3 other columns because of outlier values.
+
+dta1 <- subset( dta, select = -c(url, timedelta, is_weekend, n_unique_tokens, n_non_stop_words, n_non_stop_unique_tokens) )
+
+#So we have few factor columns when checked from the structure of data so we need to convert them to numeric in order to run correlation.
+dta1$data_channel_is_lifestyle<- as.numeric(dta1$data_channel_is_lifestyle)
+dta1$data_channel_is_entertainment<- as.numeric(dta1$data_channel_is_entertainment)
+dta1$data_channel_is_bus<- as.numeric(dta1$data_channel_is_bus)
+dta1$data_channel_is_socmed<- as.numeric(dta1$data_channel_is_socmed)
+dta1$data_channel_is_tech<- as.numeric(dta1$data_channel_is_tech)
+dta1$data_channel_is_world<- as.numeric(dta1$data_channel_is_world)
+dta1$weekday_is_monday<- as.numeric(dta1$weekday_is_monday)
+dta1$weekday_is_tuesday<- as.numeric(dta1$weekday_is_tuesday)
+dta1$weekday_is_wednesday<- as.numeric(dta1$weekday_is_wednesday)
+dta1$weekday_is_thursday<- as.numeric(dta1$weekday_is_thursday)
+dta1$weekday_is_friday<- as.numeric(dta1$weekday_is_friday)
+dta1$weekday_is_saturday<- as.numeric(dta1$weekday_is_saturday)
+dta1$weekday_is_sunday<- as.numeric(dta1$weekday_is_sunday)
+
+```
+
+
+```{r}
+##Correlation Matrix for Feature Selection
+
+
+#Now we will run correlation and see for all the x values that are most correlated among each other and then remove those columns for two reasons mentioned below. The cutoff we have set is 0.75 which is the ideal correlation cutoff and based on that we will look our results.
+
+#Multicollinearity: High correlation between features can lead to multicollinearity in linear models like regression. Multicollinearity can make it difficult to interpret the importance of individual features and can destabilize model coefficients.
+
+#Overfitting: Including highly correlated features can lead to overfitting, where the model fits the training data too closely and performs poorly on new, unseen data. Removing these features can help prevent overfitting.
+
+set.seed(7)
+# load the library
+library(mlbench)
+library(caret)
+library(ggplot2)
+library(lattice)
+
+# calculate correlation matrix
+correlationMatrix <- cor(dta1[,1:54])
+# find attributes that are highly corrected (ideally >0.75)
+highlyCorrelated <- findCorrelation(correlationMatrix, cutoff=0.75)
+# print indexes of highly correlated attributes
+print(highlyCorrelated)
+library(ggcorrplot)
+ggcorrplot(correlationMatrix)
+
+```
+
+
+```{r}
+# From correlation matrix we got 10 columns that we need to remove and we will create now dta2 with omitted columns.
+
+columns_to_remove <- c(23, 14, 44, 34, 15, 25, 16, 24)
+dta2 <- dta1[, -columns_to_remove]
+
+```
+
+
+```{r}
+
+## Model 1: Linear Regression Model
+
+# Load the required libraries
+library(caret)
+
+set.seed(123)  
+
+# Split the data into training (70%) and testing (30%) sets
+index <- createDataPartition(dta2$shares, p = 0.7, list = FALSE)
+training_data <- dta2[index, ]
+testing_data <- dta2[-index, ]
+
+# Train the linear regression model
+linear_model <- lm(shares ~ ., data = training_data)
+
+# Make predictions on the testing data
+predictions <- predict(linear_model, newdata = testing_data)
+
+# Calculate Mean Absolute Error (MAE)
+mae <- mean(abs(predictions - testing_data$shares))
+cat("Mean Absolute Error (MAE):", mae, "\n")
+
+# Calculate Mean Squared Error (MSE)
+mse <- mean((predictions - testing_data$shares)^2)
+cat("Mean Squared Error (MSE):", mse, "\n")
+
+# Calculate R-squared (R2)
+ssr <- sum((predictions - testing_data$shares)^2)
+sst <- sum((testing_data$shares - mean(testing_data$shares))^2)
+r_squared <- 1 - (ssr / sst)
+cat("R-squared (R2):", r_squared, "\n")
+
+#This model is not right for this specific case and we cant use it because the value for R square is very low.
+
+```
+
+
+```{r}
+##Model 2: Logistic Regression
+
+# Load the required libraries
+library(caret)
+
+set.seed(123)  
+
+# Define a threshold for popularity (e.g., more than 1400 shares)
+threshold <- 1400
+
+# Create a binary outcome variable 'popular' based on the threshold
+dta2$popular <- ifelse(dta2$shares > threshold, 1, 0)
+dta3 <- data <- subset(dta2, select = -shares)
+
+# Split the data into training (70%) and testing (30%) sets
+index <- createDataPartition(dta3$popular, p = 0.7, list = FALSE)
+training_data <- dta3[index, ]
+testing_data <- dta3[-index, ]
+
+# Train the logistic regression model
+logistic_model <- glm(popular ~ ., data = training_data, family = binomial)
+
+# Make predictions on the testing data
+predictions <- predict(logistic_model, newdata = testing_data, type = "response")
+
+# Convert predicted probabilities to binary outcomes (e.g., popular or not popular)
+predicted_classes <- ifelse(predictions > 0.5, 1, 0)
+
+# Calculate accuracy
+accuracy <- mean(predicted_classes == testing_data$popular)
+cat("Accuracy:", accuracy, "\n")
+
+#Logistic regression correctly predicted that out of all the samples in the test dataset, the model made accurate predictions for about 63.19% of them.
+```
+
+
+```{r}
+## Model 3: Decision Tree
+# Load the required libraries
+
+library(rpart)
+set.seed(123)  
+
+# Split the data into training (70%) and testing (30%) sets
+
+index <- createDataPartition(dta2$shares, p = 0.7, list = FALSE)
+training_data <- dta2[index, ]
+testing_data <- dta2[-index, ]
+
+# Define the formula for the decision tree model
+formula <- shares ~ .
+
+# Train the decision tree model
+tree_model <- rpart(formula, data = training_data, method = "anova")
+
+# Make predictions on the testing data
+predictions <- predict(tree_model, newdata = testing_data)
+
+# Calculate Mean Absolute Error (MAE) for decision tree
+tree_mae <- mean(abs(predictions - testing_data$shares))
+cat("Decision Tree Mean Absolute Error (MAE):", tree_mae, "\n")
+
+# Calculate Mean Squared Error (MSE) for decision tree
+tree_mse <- mean((predictions - testing_data$shares)^2)
+cat("Decision Tree Mean Squared Error (MSE):", tree_mse, "\n")
+
+# Calculate R-squared (R2) for decision tree
+tree_r_squared <- 1 - (sum((predictions - testing_data$shares)^2) / sum((testing_data$shares - mean(testing_data$shares))^2))
+cat("Decision Tree R-squared (R2):", tree_r_squared, "\n")
+
+# Create a confusion matrix
+confusion_matrix <- table(Actual = testing_data$shares, Predicted = predictions)
+
+
+# Calculate sensitivity and specificity
+TP <- confusion_matrix[2, 2]  # True Positives
+TN <- confusion_matrix[1, 1]  # True Negatives
+FP <- confusion_matrix[1, 2]  # False Positives
+FN <- confusion_matrix[2, 1]  # False Negatives
+
+# Sensitivity (True Positive Rate)
+sensitivity <- TP / (TP + FN)
+
+# Specificity (True Negative Rate)
+specificity <- TN / (TN + FP)
+
+# Accuracy
+accuracy <- (TP + TN) / (TP + TN + FP + FN)
+
+cat("Sensitivity (True Positive Rate):", sensitivity, "\n")
+cat("Specificity (True Negative Rate):", specificity, "\n")
+cat("Accuracy:", accuracy, "\n")
+
+#Visual for specificity and sensitivity.
+# Create a data frame with sensitivity and specificity
+results <- data.frame(Metric = c("Sensitivity", "Specificity"),
+                      Value = c(sensitivity, specificity))
+
+# Load the ggplot2 library
+library(ggplot2)
+
+# Create a bar chart
+ggplot(results, aes(x = Metric, y = Value)) +
+  geom_bar(stat = "identity", fill = "orange") +
+  ylim(0, 1) +  # Set the y-axis limits from 0 to 1
+  labs(y = "Value") +
+  ggtitle("Sensitivity and Specificity") +
+  theme_minimal()
+
+# This model is also not right for this case because it gave an accuracy of 0.5 which means that the model is making random predictions and is not performing better than random chance. 
+```
+
+
+```{r}
+## Model 4: Random Forest 
+
+# Load the required library
+library(randomForest)
+
+# Split the data into training (70%) and testing (30%) sets
+index <- createDataPartition(dta2$shares, p = 0.7, list = FALSE)
+training_data <- dta2[index, ]
+testing_data <- dta2[-index, ]
+
+# Train the Random Forest model for binary classification
+rf_model <- randomForest(shares ~ ., data = training_data, ntree = 100)
+
+# Make predictions on the testing data
+predictions <- predict(rf_model, newdata = testing_data, type = "response")
+
+# Convert predicted probabilities to binary outcomes (e.g., popular or not popular)
+predicted_classes <- ifelse(predictions > 0.5, 1, 0)
+
+# Calculate accuracy for binary classification
+accuracy <- mean(predicted_classes == testing_data$popular)
+cat("Random Forest Accuracy:", accuracy, "\n")
+```
+```{r}
+### Now we will do all models with new set of features using XGboost feature selection method.
+```
+
+
+```{r}
+## To assess how different models respond to a new set of variables, we will conduct a fresh round of feature selection using XGBoost and observe the impact on the model's performance. We will work with top 20 variables now.
+
+## XGBoost Feature Selection method
+
+# Install and load the required library
+
+library(xgboost)
+library(caret)
+
+# Split the data into training (70%) and testing (30%) sets
+index <- createDataPartition(dta2$shares, p = 0.7, list = FALSE)
+training_data <- dta2[index, ]
+testing_data <- dta2[-index, ]
+
+# Define the formula for XGBoost and create DMatrix
+X_train <- xgb.DMatrix(data = as.matrix(training_data[, -1]), label = training_data$shares)
+
+# Specify XGBoost parameters
+xgb_params <- list(
+  objective = "reg:squarederror",
+  booster = "gbtree",
+  eval_metric = "mae"
+)
+
+# Train the XGBoost model for feature selection
+xgb_model <- xgboost(data = X_train, params = xgb_params, nrounds = 100)
+
+# Get feature importance scores
+importance_scores <- xgb.importance(model = xgb_model)
+
+# Print the feature importance scores
+print(importance_scores)
+
+# Sort the importance scores in descending order
+sorted_scores <- importance_scores[order(-importance_scores[, "Gain"]), ]
+
+# Select the top N features with the highest gain (e.g., top 10 features)
+top_n_features <- head(sorted_scores, n = 20 )
+
+# Print the top features
+print(top_n_features)
+
+# Select the top N features from your dataset (replace N with the number you want)
+selected_features <- dta2[, c(top_n_features$Feature, "shares")]
+
+# Update the original dataset with the selected features
+dta_xgb <- selected_features
+
+```
+
+
+```{r}
+##Model 1: Liner Regression
+
+# Select the top N features from your dataset (replace N with the number you want)
+selected_features <- training_data[, top_n_features$Feature]
+
+# Add the target variable to the selected features
+selected_features$shares <- training_data$shares
+
+# Train the linear regression model using the selected features
+linear_model <- lm(shares ~ ., data = selected_features)
+
+# Make predictions on the testing data
+testing_data_subset <- testing_data[, top_n_features$Feature]
+predictions <- predict(linear_model, newdata = testing_data_subset)
+
+# Calculate Mean Absolute Error (MAE)
+mae <- mean(abs(predictions - testing_data$shares))
+cat("Linear Regression Mean Absolute Error (MAE):", mae, "\n")
+
+# Calculate Mean Squared Error (MSE)
+mse <- mean((predictions - testing_data$shares)^2)
+cat("Linear Regression Mean Squared Error (MSE):", mse, "\n")
+
+# Calculate R-squared (R2)
+ssr <- sum((predictions - testing_data$shares)^2)
+sst <- sum((testing_data$shares - mean(testing_data$shares))^2)
+r_squared <- 1 - (ssr / sst)
+cat("Linear Regression R-squared (R2):", r_squared, "\n")
+
+
+#Again the value for R square is very low.
+
+```
+
+
+```{r}
+##Model 2:Decision Tree
+# Load the required libraries
+
+library(rpart)
+set.seed(123)  
+
+# Split the data into training (70%) and testing (30%) sets
+
+index <- createDataPartition(dta_xgb$shares, p = 0.7, list = FALSE)
+training_data <- dta_xgb[index, ]
+testing_data <- dta_xgb[-index, ]
+
+# Define the formula for the decision tree model
+formula <- shares ~ .
+
+# Train the decision tree model
+tree_model <- rpart(formula, data = training_data, method = "anova")
+
+# Make predictions on the testing data
+predictions <- predict(tree_model, newdata = testing_data)
+
+# Calculate Mean Absolute Error (MAE) for decision tree
+tree_mae <- mean(abs(predictions - testing_data$shares))
+cat("Decision Tree Mean Absolute Error (MAE):", tree_mae, "\n")
+
+# Calculate Mean Squared Error (MSE) for decision tree
+tree_mse <- mean((predictions - testing_data$shares)^2)
+cat("Decision Tree Mean Squared Error (MSE):", tree_mse, "\n")
+
+# Calculate R-squared (R2) for decision tree
+tree_r_squared <- 1 - (sum((predictions - testing_data$shares)^2) / sum((testing_data$shares - mean(testing_data$shares))^2))
+cat("Decision Tree R-squared (R2):", tree_r_squared, "\n")
+
+# Create a confusion matrix
+confusion_matrix <- table(Actual = testing_data$shares, Predicted = predictions)
+
+
+# Calculate sensitivity and specificity
+TP <- confusion_matrix[2, 2]  # True Positives
+TN <- confusion_matrix[1, 1]  # True Negatives
+FP <- confusion_matrix[1, 2]  # False Positives
+FN <- confusion_matrix[2, 1]  # False Negatives
+
+# Sensitivity (True Positive Rate)
+sensitivity <- TP / (TP + FN)
+
+# Specificity (True Negative Rate)
+specificity <- TN / (TN + FP)
+
+# Accuracy
+accuracy <- (TP + TN) / (TP + TN + FP + FN)
+
+cat("Sensitivity (True Positive Rate):", sensitivity, "\n")
+cat("Specificity (True Negative Rate):", specificity, "\n")
+cat("Accuracy:", accuracy, "\n")
+
+#It is still giving an accuracy of 0.5 so this model is not accurate at all because it is making random predictions.
+
+```
+
+
+```{r}
+
+## Model 3: Logistic Regression
+
+# Define a threshold for popularity (e.g., more than 1400 shares)
+threshold <- 1400
+
+# Create a binary outcome variable 'popular' based on the threshold
+dta_xgb$popular <- ifelse(dta_xgb$shares > threshold, 1, 0)
+dta_xgb1 <- data <- subset(dta_xgb, select = -shares)
+
+# Split the data into training (70%) and testing (30%) sets
+index <- createDataPartition(dta_xgb1$popular, p = 0.7, list = FALSE)
+training_data <- dta_xgb1[index, ]
+testing_data <- dta_xgb1[-index, ]
+
+# Train the logistic regression model with the selected features
+logistic_model <- glm(popular ~ ., data = training_data, family = gaussian)
+
+# Make predictions on the testing data
+predictions <- predict(logistic_model, newdata = testing_data, type = "response")
+
+# Convert predicted probabilities to binary outcomes (e.g., popular or not popular)
+predicted_classes <- ifelse(predictions > 0.5, 1, 0)
+
+# Calculate accuracy
+accuracy <- mean(predicted_classes == testing_data$popular)
+cat("Accuracy:", accuracy, "\n")
+
+#The accuracy level has improved a little with with 20 variables and now it has become almost 65%.
+
+```
+
+
+```{r}
+## Model 4: Random Forest with XGBoost Dataset for Binary Classification
+
+# Load the required library
+library(randomForest)
+
+# Split the data into training (70%) and testing (30%) sets
+index <- createDataPartition(dta_xgb$shares, p = 0.7, list = FALSE)
+training_data <- dta_xgb[index, ]
+testing_data <- dta_xgb[-index, ]
+
+# Train the Random Forest model for binary classification
+rf_model <- randomForest(shares ~ ., data = training_data, ntree = 100)
+
+# Make predictions on the testing data
+predictions <- predict(rf_model, newdata = testing_data, type = "response")
+
+# Convert predicted probabilities to binary outcomes (e.g., popular or not popular)
+predicted_classes <- ifelse(predictions > 0.5, 1, 0)
+
+# Calculate accuracy for binary classification
+accuracy <- mean(predicted_classes == testing_data$popular)
+cat("Random Forest Accuracy:", accuracy, "\n")
+
+# We got an accuracy level of 49% which means this model is not workable.
+```
+
+
+```{r}
+## Model 5: Naive Bayes for Benchmarking
+
+#Naive Bayes accuracy with 54 variables.
+
+# Load the required library
+library(e1071)
+
+# Split the data into training (70%) and testing (30%) sets
+index <- createDataPartition(dta_xgb$shares, p = 0.7, list = FALSE)
+training_data <- dta_xgb[index, ]
+testing_data <- dta_xgb[-index, ]
+
+# Train the Naive Bayes model
+nb_model <- naiveBayes(popular ~ ., data = training_data)
+
+# Make predictions on the testing data
+predictions <- predict(nb_model, newdata = testing_data, type = "class")
+
+# Calculate accuracy for binary classification
+accuracy <- mean(predictions == testing_data$popular)
+cat("Naive Bayes Accuracy:", accuracy, "\n")
+
+```
+
+
+```{r}
+## Model 5: Naive Bayes for Benchmarking
+
+#Naive Bayes accuracy with 20 variables.
+
+# Load the required library
+library(e1071)
+
+# Split the data into training (70%) and testing (30%) sets
+index <- createDataPartition(dta_xgb$shares, p = 0.7, list = FALSE)
+training_data <- dta2[index, ]
+testing_data <- dta2[-index, ]
+
+# Train the Naive Bayes model
+nb_model <- naiveBayes(popular ~ ., data = training_data)
+
+# Make predictions on the testing data
+predictions <- predict(nb_model, newdata = testing_data, type = "class")
+
+# Calculate accuracy for binary classification
+accuracy <- mean(predictions == testing_data$popular)
+cat("Naive Bayes Accuracy:", accuracy, "\n")
+
+```
+
+
+```{r}
+model_comparison_1 <- data.frame(
+  Model = c("Naive Bayes", "Logistic Reg", "Random Forest", "Decision Tree"),
+  Accuracy = c(0.8595, 0.6318, 0.4934, 0.5)
+)
+
+model_comparison_1
+
+model_comparison_2 <- data.frame(
+  Model = c("Naive Bayes", "Logistic Reg", "Random Forest", "Decision Tree"),
+  Accuracy = c(0.8324, 0.6497, 0.4934, 0.5)
+)
+
+model_comparison_2
+
+```
+
+
